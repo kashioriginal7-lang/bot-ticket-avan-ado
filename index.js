@@ -1,92 +1,92 @@
 require("dotenv").config();
 const { 
-    Client,
-    GatewayIntentBits,
+    Client, 
+    GatewayIntentBits, 
     PermissionsBitField,
     ChannelType,
-    ActionRowBuilder,
-    StringSelectMenuBuilder,
-    EmbedBuilder
+    REST,
+    Routes,
+    SlashCommandBuilder
 } = require("discord.js");
 
 const client = new Client({
-    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildMessages]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers
+    ]
 });
 
-// IDs das categorias do servidor
-const ticketCategories = {
-    suporte: "SUPORTE-ID-DA-CATEGORIA",
-    financeiro: "FINANCEIRO-ID-DA-CATEGORIA",
-    geral: "GERAL-ID-DA-CATEGORIA"
-};
+const commands = [
+    new SlashCommandBuilder()
+        .setName("ticket")
+        .setDescription("Abrir um ticket"),
+    new SlashCommandBuilder()
+        .setName("fechar")
+        .setDescription("Fechar o ticket atual")
+].map(cmd => cmd.toJSON());
 
-// Menu de tickets
 client.once("ready", async () => {
     console.log(`🔥 Bot online como ${client.user.tag}`);
-    
-    const guild = client.guilds.cache.get("SEU_GUILD_ID");
-    const canal = guild.channels.cache.get("ID_CANAL_DE_MENU");
 
-    const embed = new EmbedBuilder()
-        .setTitle("🎫 Abrir um Ticket")
-        .setDescription("Selecione o tipo de ticket no menu abaixo.")
-        .setColor("Green");
+    const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
 
-    const menu = new StringSelectMenuBuilder()
-        .setCustomId("abrir_ticket")
-        .setPlaceholder("Escolha o tipo de ticket")
-        .addOptions([
-            { label: "Suporte", value: "suporte", description: "Problemas técnicos ou dúvidas" },
-            { label: "Financeiro", value: "financeiro", description: "Pagamentos, reembolsos" },
-            { label: "Geral", value: "geral", description: "Outros assuntos" }
-        ]);
+    await rest.put(
+        Routes.applicationCommands(client.user.id),
+        { body: commands }
+    );
 
-    const row = new ActionRowBuilder().addComponents(menu);
-
-    canal.send({ embeds: [embed], components: [row] });
+    console.log("📌 Comandos registrados com sucesso!");
 });
 
-// Interação do menu
 client.on("interactionCreate", async interaction => {
-    if (interaction.isStringSelectMenu() && interaction.customId === "abrir_ticket") {
-        const tipo = interaction.values[0];
+    if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === "ticket") {
         const guild = interaction.guild;
         const user = interaction.user;
 
-        try {
-            const canal = await guild.channels.create({
-                name: `ticket-${user.username}`,
-                type: ChannelType.GuildText,
-                parent: ticketCategories[tipo],
-                permissionOverwrites: [
-                    { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                    { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-                ]
-            });
-
-            await interaction.reply({ content: `🎫 Ticket criado: ${canal}`, ephemeral: true });
-            await canal.send(`👋 Olá ${user}, explique seu problema e nossa equipe vai te ajudar!`);
-
-            // Notificação para administradores
-            guild.members.cache.forEach(member => {
-                if (member.permissions.has(PermissionsBitField.Flags.Administrator) && !member.user.bot) {
-                    member.send(`📌 Novo ticket aberto por ${user.tag} no canal ${canal}`).catch(() => {
-                        console.log(`❌ Não foi possível enviar DM para ${member.user.tag}`);
-                    });
+        const canal = await guild.channels.create({
+            name: `ticket-${user.username}`,
+            type: ChannelType.GuildText,
+            permissionOverwrites: [
+                {
+                    id: guild.id,
+                    deny: [PermissionsBitField.Flags.ViewChannel]
+                },
+                {
+                    id: user.id,
+                    allow: [
+                        PermissionsBitField.Flags.ViewChannel,
+                        PermissionsBitField.Flags.SendMessages
+                    ]
                 }
+            ]
+        });
+
+        await interaction.reply({
+            content: `🎫 Ticket aberto! Vá até o canal: ${canal}`,
+            ephemeral: true
+        });
+
+        await canal.send(`👋 Olá ${user}, explique seu problema e iremos te ajudar!`);
+
+        // Avisar administradores
+        guild.roles.cache.filter(r => r.permissions.has(PermissionsBitField.Flags.Administrator)).forEach(role => {
+            role.members.forEach(member => {
+                if (!member.user.bot) member.send(`📌 ${user.tag} abriu um ticket: ${canal.name}`);
             });
-        } catch (err) {
-            console.error("❌ Erro ao criar ticket:", err);
-            interaction.reply({ content: "❌ Não foi possível criar o ticket.", ephemeral: true });
-        }
+        });
     }
 
-    // Comando de fechar ticket
-    if (interaction.isChatInputCommand() && interaction.commandName === "fechar") {
+    if (interaction.commandName === "fechar") {
         const canal = interaction.channel;
-        if (!canal.name.startsWith("ticket-")) return interaction.reply({ content: "❌ Este canal não é um ticket!", ephemeral: true });
+
+        if (!canal.name.startsWith("ticket-")) {
+            return interaction.reply({ content: "❌ Esse canal não é um ticket!", ephemeral: true });
+        }
+
         await interaction.reply("⏳ Fechando o ticket...");
-        setTimeout(() => canal.delete().catch(console.error), 2000);
+        setTimeout(() => canal.delete(), 2000);
     }
 });
 

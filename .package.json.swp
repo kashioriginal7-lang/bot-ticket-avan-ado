@@ -1,0 +1,12 @@
+{
+  "name": "bot-ticket-avancado",
+  "version": "1.0.0",
+  "description": "Bot de tickets avançado",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.13.0",
+  }
+}
